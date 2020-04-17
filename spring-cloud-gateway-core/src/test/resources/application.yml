@@ -1,12 +1,22 @@
 test:
   hostport: httpbin.org:80
-#  hostport: localhost:5000
-#  uri: http://${test.hostport}
+  #  hostport: localhost:5000
+  #  uri: http://${test.hostport}
   uri: lb://testservice
 
 spring:
+  profiles:
+    include: logging
+
   cloud:
     gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            maxAge: 10
+            allowedOrigins: "*"
+            allowedMethods:
+            - GET
       default-filters:
       - AddResponseHeader=X-Response-Default-Foo, Default-Bar
       - PrefixPath=/httpbin
@@ -58,42 +68,108 @@ spring:
         filters:
         - AddResponseHeader=X-Request-Foo, Bar
 
+        # =====================================
+      - id: circuitbreaker_exception_fallback_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.circuitbreakerexceptionfallback.org
+        filters:
+          - name: CircuitBreaker
+            args:
+              name: fallbackcmd
+              fallbackUri: forward:/circuitbreakerExceptionFallback
+
+        # =====================================
+      - id: circuitbreaker_fallback_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.circuitbreakerfallback.org
+        filters:
+          - name: CircuitBreaker
+            args:
+              name: fallbackcmd
+              fallbackUri: forward:/circuitbreakerFallbackController
+
+        # =====================================
+      - id: change_uri_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.changeuri.org
+          - Header=X-CF-Forwarded-Url
+        filters:
+          - RequestHeaderToRequestUri=X-CF-Forwarded-Url
+
+        # =====================================
+      - id: cloudfoundry_routeservice_test
+        uri: ${test.uri}
+        predicates:
+          - CloudFoundryRouteService=
+        filters:
+          - RequestHeaderToRequestUri=X-CF-Forwarded-Url
+
+        # =====================================
+      - id: cookie_regex_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.cookieregex.org
+          - Cookie=mycookie, hello.*
+
+      # =====================================
+      - id: dedupe_response_header_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.deduperesponseheader.org
+          - Path=/headers
+        filters:
+          - AddResponseHeader=Access-Control-Allow-Credentials, true
+          - AddResponseHeader=Access-Control-Allow-Credentials, false
+          - AddResponseHeader=Access-Control-Allow-Origin, https://musk.mars
+          - AddResponseHeader=Access-Control-Allow-Origin, *
+          - AddResponseHeader=Scout-Cookie, Thin Mints
+          - AddResponseHeader=Scout-Cookie, S'mores
+          - AddResponseHeader=Next-Week-Lottery-Numbers, 4
+          - AddResponseHeader=Next-Week-Lottery-Numbers, 2
+          - AddResponseHeader=Next-Week-Lottery-Numbers, 2
+          - AddResponseHeader=Next-Week-Lottery-Numbers, 42
+          - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin, RETAIN_FIRST
+          - DedupeResponseHeader=Scout-Cookie, RETAIN_LAST
+          - DedupeResponseHeader=Next-Week-Lottery-Numbers, RETAIN_UNIQUE
+
       # =====================================
       - id: forward_test
         uri: forward:/localcontroller
         predicates:
         - Host=**.forward.org
 
-      # =====================================
-      - id: hystrix_failure_test
+        # =====================================
+      - id: header_test
         uri: ${test.uri}
         predicates:
-        - Host=**.hystrixfailure.org
-        filters:
-        - Hystrix=failcmd
+          - Header=Foo, .*
 
       # =====================================
-      - id: hystrix_fallback_test
+      - id: host_backwards_compatible_test
         uri: ${test.uri}
         predicates:
-        - Host=**.hystrixfallback.org
-        filters:
-        - name: Hystrix
+        - name: Host
           args:
-            name: fallbackcmd
-            fallbackUri: forward:/fallbackcontroller
+            pattern: '**.hostpatternarg.org'
 
       # =====================================
-      - id: hystrix_success_test
+      - id: host_backwards_compatible_shortcut_test
         uri: ${test.uri}
         predicates:
-        - Host=**.hystrixsuccess.org
-        filters:
-        - Hystrix=successcmd
+        - Host=**.hostpatternshortcut.org
+
+      # =====================================
+      - id: host_multi_test
+        uri: ${test.uri}
+        predicates:
+        - Host=**.hostmulti1.org,**.hostmulti2.org
 
       # =====================================
       - id: load_balancer_client_test
-        uri: lb://myservice
+        uri: lb://testservice
         predicates:
         - Host=**.loadbalancerclient.org
 
@@ -118,12 +194,61 @@ spring:
         - Between=1000-03-13T10:39:37.518-04:00[America/New_York],1002-03-13T10:39:37.518-04:00[America/New_York]
 
       # =====================================
+      - id: path_test
+        uri: ${test.uri}
+        predicates:
+        - Path=/{org}/{scope}/function,false
+        - Host=**.path.org
+        filters:
+        - SetPath=/anything/{org}{scope}
+
+      # =====================================
+      - id: path_test_two
+        uri: ${test.uri}
+        predicates:
+        - Path=/{org}/{scope}/function,true
+        - Host=**.path.org
+        filters:
+        - SetStatus=404
+
+        # =====================================
+      - id: path_multi
+        uri: ${test.uri}
+        predicates:
+        - Host=**.pathmulti.org
+        - Path=/anything/multi1{num},/anything/multi2{num}
+        filters:
+        - SetPath=/anything/multi{num}
+
+        # =====================================
+      - id: per_route_connect_timeout
+        uri: http://localhost:32167
+        predicates:
+          - name: Path
+            args:
+              pattern: /connect/delay/{timeout}
+        metadata:
+          connect-timeout: 5
+
+        # =====================================
+      - id: per_route_response_timeout
+        uri: ${test.uri}
+        predicates:
+          - name: Path
+            args:
+              pattern: /route/delay/{timeout}
+        filters:
+          - StripPrefix=1
+        metadata:
+          response-timeout: 1000
+
+      # =====================================
       - id: redirect_to_test
         uri: ${test.uri}
         predicates:
         - Host=**.redirectto.org
         filters:
-        - RedirectTo=302, http://example.org
+        - RedirectTo=302, https://example.org
 
       # =====================================
       - id: remove_request_header_test
@@ -144,13 +269,49 @@ spring:
         - AddResponseHeader=X-Request-Foo, Bar
         - RemoveResponseHeader=X-Request-Foo
 
-      # =====================================
-      - id: retry_test
+        # =====================================
+      - id: rewrite_location_response_header_test
         uri: ${test.uri}
         predicates:
-        - Path=/retry
+          - Host=**.rewritelocationresponseheader.org
+          - Path=/headers
         filters:
-        - Retry
+          - AddResponseHeader=Location, https://backend.org:443/v1/some/object/id
+          - RewriteLocationResponseHeader
+
+        # =====================================
+      - id: rewrite_response_header_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.rewriteresponseheader.org
+          - Path=/headers
+        filters:
+          - AddResponseHeader=X-Request-Foo, /42?user=ford&password=omg!what&flag=true
+          - RewriteResponseHeader=X-Request-Foo, password=[^&]+, password=***
+
+        # =====================================
+      - id: sccb_failure_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.sccbfailure.org
+        filters:
+          - CircuitBreaker=failcmd
+
+        # =====================================
+      - id: sccb_success_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.sccbsuccess.org
+        filters:
+          - CircuitBreaker=successcmd
+
+        # =====================================
+      - id: sccb_timeout_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.sccbtimeout.org
+        filters:
+          - CircuitBreaker=timeoutcmd
 
       # =====================================
       - id: secure_headers_test
@@ -170,14 +331,13 @@ spring:
         filters:
         - SetPath=/{segment}
 
-      # =====================================
-      - id: strip_prefix_test
+        # =====================================
+      - id: set_path_host_test
         uri: ${test.uri}
         predicates:
-        - Host=**.stripprefix.org
-        - Path=/foo/**
+        - Host={subdomain}.setpathhost.org
         filters:
-        - StripPrefix=2
+        - SetPath=/{subdomain}
 
       # =====================================
       - id: set_response_header_test
@@ -186,9 +346,9 @@ spring:
         - Host=**.setreresponseheader.org
         - Path=/headers
         filters:
-        - AddResponseHeader=X-Request-Foo, Bar1
-        - AddResponseHeader=X-Request-Foo, Bar2
-        - SetResponseHeader=X-Request-Foo, Bar
+        - AddResponseHeader=X-Response-Foo, Bar1
+        - AddResponseHeader=X-Response-Foo, Bar2
+        - SetResponseHeader=X-Response-Foo, Bar
 
       # =====================================
       - id: set_status_int_test
@@ -210,6 +370,15 @@ spring:
         filters:
         - SetStatus=BAD_REQUEST
 
+        # =====================================
+      - id: strip_prefix_test
+        uri: ${test.uri}
+        predicates:
+          - Host=**.stripprefix.org
+          - Path=/foo/**
+        filters:
+          - StripPrefix=2
+
       # =====================================
       - id: rewrite_path_test
         uri: ${test.uri}
@@ -222,6 +391,20 @@ spring:
         - AddRequestHeader=X-Request-Foo, Bar
         - AddRequestHeader=X-Request-Baz, Bat
 
+        # =====================================
+      - id: route_with_metadata
+        uri: ${test.uri}
+        order: 10000
+        predicates:
+          - name: Path
+            args:
+              pattern: /route_with_metadata
+        metadata:
+          optionName: "OptionValue"
+          compositeObject:
+            name: "value"
+          iAmNumber: 1
+
       # =====================================
       - id: weight_high_test
         uri: ${test.uri}
@@ -230,12 +413,7 @@ spring:
         - Weight=group1, 8
 
       # =====================================
-      - id: header_test
-        uri: ${test.uri}
-        predicates:
-        - Header=Foo, .*
-
-      # =====================================
+      # should be last and not follow alphabetical order
       - id: default_path_to_httpbin
         uri: ${test.uri}
         order: 10000
@@ -244,18 +422,8 @@ spring:
           args:
             pattern: /**
 
-hystrix.command.successcmd.execution.isolation.thread.timeoutInMilliseconds: 5000
-
-logging:
-  level:
-    org.springframework.cloud.gateway: TRACE
-    org.springframework.http.server.reactive: DEBUG
-    org.springframework.web.reactive: DEBUG
-    reactor.ipc.netty: DEBUG
-    redisratelimiter: DEBUG
-
-eureka:
-  client:
-    enabled: false
-#  port: 8081
-
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
