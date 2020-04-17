@@ -1,18 +1,17 @@
 /*
- * Copyright 2013-2017 the original author or authors.
+ * Copyright 2013-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package org.springframework.cloud.gateway.handler.predicate;
@@ -20,9 +19,13 @@ package org.springframework.cloud.gateway.handler.predicate;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.function.Predicate;
 
 import org.junit.Test;
-import org.springframework.cloud.gateway.support.ConfigurationUtils;
+
+import org.springframework.boot.convert.ApplicationConversionService;
+import org.springframework.cloud.gateway.support.ConfigurationService;
+import org.springframework.cloud.gateway.support.StringToZonedDateTimeConverter;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.web.server.ServerWebExchange;
@@ -35,6 +38,46 @@ import static org.springframework.cloud.gateway.handler.predicate.BetweenRoutePr
  * @author Spencer Gibb
  */
 public class BetweenRoutePredicateFactoryTests {
+
+	static <T> T bindConfig(HashMap<String, Object> properties,
+			AbstractRoutePredicateFactory<T> factory) {
+		ApplicationConversionService conversionService = new ApplicationConversionService();
+		conversionService.addConverter(new StringToZonedDateTimeConverter());
+		// @formatter:off
+		T config = new ConfigurationService(null, () -> conversionService, () -> null)
+				.with(factory)
+				.name("myname")
+				.normalizedProperties(properties)
+				.bind();
+		// @formatter:on
+		return config;
+	}
+
+	static String minusHoursMillis(int hours) {
+		final int millis = hours * 1000 * 60 * 60;
+		return String.valueOf(System.currentTimeMillis() - millis);
+	}
+
+	static String plusHoursMillis(int hours) {
+		final int millis = hours * 1000 * 60 * 60;
+		return String.valueOf(System.currentTimeMillis() + millis);
+	}
+
+	static String minusHours(int hours) {
+		return ZonedDateTime.now().minusHours(hours)
+				.format(DateTimeFormatter.ISO_ZONED_DATE_TIME);
+	}
+
+	static String plusHours(int hours) {
+		return ZonedDateTime.now().plusHours(hours)
+				.format(DateTimeFormatter.ISO_ZONED_DATE_TIME);
+	}
+
+	static ServerWebExchange getExchange() {
+		MockServerHttpRequest request = MockServerHttpRequest.get("https://example.com")
+				.build();
+		return MockServerWebExchange.from(request);
+	}
 
 	@Test
 	public void beforeStringWorks() {
@@ -55,7 +98,8 @@ public class BetweenRoutePredicateFactoryTests {
 
 		final boolean result = runPredicate(dateString1, dateString2);
 
-		assertThat(result).as("Now is not between %s and %s", dateString1, dateString2).isTrue();
+		assertThat(result).as("Now is not between %s and %s", dateString1, dateString2)
+				.isTrue();
 	}
 
 	@Test
@@ -85,7 +129,8 @@ public class BetweenRoutePredicateFactoryTests {
 
 		final boolean result = runPredicate(dateString1, dateString2);
 
-		assertThat(result).as("Now is not between %s and %s", dateString1, dateString2).isTrue();
+		assertThat(result).as("Now is not between %s and %s", dateString1, dateString2)
+				.isTrue();
 	}
 
 	@Test
@@ -101,8 +146,8 @@ public class BetweenRoutePredicateFactoryTests {
 	@Test
 	public void testPredicates() {
 		boolean result = new BetweenRoutePredicateFactory()
-				.apply(c -> c.setDatetime1(ZonedDateTime.now().minusHours(2).toString())
-						.setDatetime2(ZonedDateTime.now().plusHours(1).toString()))
+				.apply(c -> c.setDatetime1(ZonedDateTime.now().minusHours(2))
+						.setDatetime2(ZonedDateTime.now().plusHours(1)))
 				.test(getExchange());
 		assertThat(result).isTrue();
 	}
@@ -114,33 +159,19 @@ public class BetweenRoutePredicateFactoryTests {
 
 		BetweenRoutePredicateFactory factory = new BetweenRoutePredicateFactory();
 
-		BetweenRoutePredicateFactory.Config config = factory.newConfig();
-
-		ConfigurationUtils.bind(config, map, "", "myname", null);
+		BetweenRoutePredicateFactory.Config config = bindConfig(map, factory);
 
 		return factory.apply(config).test(getExchange());
 	}
 
-	static String minusHoursMillis(int hours) {
-		final int millis = hours * 1000 * 60 * 60;
-		return String.valueOf(System.currentTimeMillis() - millis);
+	@Test
+	public void toStringFormat() {
+		BetweenRoutePredicateFactory.Config config = new BetweenRoutePredicateFactory.Config();
+		config.setDatetime1(ZonedDateTime.now());
+		config.setDatetime2(ZonedDateTime.now().plusHours(1));
+		Predicate predicate = new BetweenRoutePredicateFactory().apply(config);
+		assertThat(predicate.toString()).contains(
+				"Between: " + config.getDatetime1() + " and " + config.getDatetime2());
 	}
 
-	static String plusHoursMillis(int hours) {
-		final int millis = hours * 1000 * 60 * 60;
-		return String.valueOf(System.currentTimeMillis() + millis);
-	}
-
-	static String minusHours(int hours) {
-		return ZonedDateTime.now().minusHours(hours).format(DateTimeFormatter.ISO_ZONED_DATE_TIME);
-	}
-
-	static String plusHours(int hours) {
-		return ZonedDateTime.now().plusHours(hours).format(DateTimeFormatter.ISO_ZONED_DATE_TIME);
-	}
-
-	static ServerWebExchange getExchange() {
-		MockServerHttpRequest request = MockServerHttpRequest.get("http://example.com").build();
-		return MockServerWebExchange.from(request);
-	}
 }

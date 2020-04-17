@@ -1,18 +1,17 @@
 /*
- * Copyright 2013-2018 the original author or authors.
+ * Copyright 2013-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package org.springframework.cloud.gateway.filter.headers;
@@ -37,71 +36,32 @@ import org.springframework.web.server.ServerWebExchange;
 
 public class ForwardedHeadersFilter implements HttpHeadersFilter, Ordered {
 
+	/**
+	 * Forwarded header.
+	 */
 	public static final String FORWARDED_HEADER = "Forwarded";
 
-	@Override
-	public int getOrder() {
-		return 0;
-	}
-
-	@Override
-	public HttpHeaders filter(HttpHeaders input, ServerWebExchange exchange) {
-		ServerHttpRequest request = exchange.getRequest();
-		HttpHeaders original = input;
-		HttpHeaders updated = new HttpHeaders();
-
-		// copy all headers except Forwarded
-		original.entrySet().stream()
-				.filter(entry -> !entry.getKey().toLowerCase().equalsIgnoreCase(FORWARDED_HEADER))
-				.forEach(entry -> updated.addAll(entry.getKey(), entry.getValue()));
-
-		List<Forwarded> forwardeds = parse(original.get(FORWARDED_HEADER));
-
-		for (Forwarded f : forwardeds) {
-			updated.add(FORWARDED_HEADER, f.toString());
-		}
-
-		//TODO: add new forwarded
-		URI uri = request.getURI();
-		String host = original.getFirst(HttpHeaders.HOST);
-		Forwarded forwarded = new Forwarded()
-				.put("host", host)
-				.put("proto", uri.getScheme());
-
-		InetSocketAddress remoteAddress = request.getRemoteAddress();
-		if (remoteAddress != null) {
-			String forValue = remoteAddress.getAddress().getHostAddress();
-			int port = remoteAddress.getPort();
-			if (port >= 0) {
-				forValue = forValue + ":" + port;
-			}
-			forwarded.put("for", forValue);
-		}
-		// TODO: support by?
-
-		updated.add(FORWARDED_HEADER, forwarded.toHeaderValue());
-
-		return updated;
-	}
-
-
-	/* for testing */ static List<Forwarded> parse(List<String> values) {
+	/* for testing */
+	static List<Forwarded> parse(List<String> values) {
 		ArrayList<Forwarded> forwardeds = new ArrayList<>();
 		if (CollectionUtils.isEmpty(values)) {
 			return forwardeds;
 		}
-    	for (String value : values) {
+		for (String value : values) {
 			Forwarded forwarded = parse(value);
 			forwardeds.add(forwarded);
 		}
 		return forwardeds;
 	}
 
-	/* for testing */ static Forwarded parse(String value) {
+	/* for testing */
+	static Forwarded parse(String value) {
 		String[] pairs = StringUtils.tokenizeToStringArray(value, ";");
 
 		LinkedCaseInsensitiveMap<String> result = splitIntoCaseInsensitiveMap(pairs);
-		if (result == null) return null;
+		if (result == null) {
+			return null;
+		}
 
 		Forwarded forwarded = new Forwarded(result);
 
@@ -109,7 +69,8 @@ public class ForwardedHeadersFilter implements HttpHeadersFilter, Ordered {
 	}
 
 	@Nullable
-	/* for testing */ static LinkedCaseInsensitiveMap<String> splitIntoCaseInsensitiveMap(String[] pairs) {
+	/* for testing */ static LinkedCaseInsensitiveMap<String> splitIntoCaseInsensitiveMap(
+			String[] pairs) {
 		if (ObjectUtils.isEmpty(pairs)) {
 			return null;
 		}
@@ -125,18 +86,66 @@ public class ForwardedHeadersFilter implements HttpHeadersFilter, Ordered {
 		return result;
 	}
 
+	@Override
+	public int getOrder() {
+		return 0;
+	}
+
+	@Override
+	public HttpHeaders filter(HttpHeaders input, ServerWebExchange exchange) {
+		ServerHttpRequest request = exchange.getRequest();
+		HttpHeaders original = input;
+		HttpHeaders updated = new HttpHeaders();
+
+		// copy all headers except Forwarded
+		original.entrySet().stream().filter(
+				entry -> !entry.getKey().toLowerCase().equalsIgnoreCase(FORWARDED_HEADER))
+				.forEach(entry -> updated.addAll(entry.getKey(), entry.getValue()));
+
+		List<Forwarded> forwardeds = parse(original.get(FORWARDED_HEADER));
+
+		for (Forwarded f : forwardeds) {
+			updated.add(FORWARDED_HEADER, f.toHeaderValue());
+		}
+
+		// TODO: add new forwarded
+		URI uri = request.getURI();
+		String host = original.getFirst(HttpHeaders.HOST);
+		Forwarded forwarded = new Forwarded().put("host", host).put("proto",
+				uri.getScheme());
+
+		InetSocketAddress remoteAddress = request.getRemoteAddress();
+		if (remoteAddress != null) {
+			// If remoteAddress is unresolved, calling getHostAddress() would cause a
+			// NullPointerException.
+			String forValue = remoteAddress.isUnresolved() ? remoteAddress.getHostName()
+					: remoteAddress.getAddress().getHostAddress();
+			int port = remoteAddress.getPort();
+			if (port >= 0) {
+				forValue = forValue + ":" + port;
+			}
+			forwarded.put("for", forValue);
+		}
+		// TODO: support by?
+
+		updated.add(FORWARDED_HEADER, forwarded.toHeaderValue());
+
+		return updated;
+	}
+
 	/* for testing */ static class Forwarded {
 
 		private static final char EQUALS = '=';
+
 		private static final char SEMICOLON = ';';
 
 		private final Map<String, String> values;
 
-		public Forwarded() {
+		Forwarded() {
 			this.values = new HashMap<>();
 		}
 
-		public Forwarded(Map<String, String> values) {
+		Forwarded(Map<String, String> values) {
 			this.values = values;
 		}
 
@@ -145,10 +154,9 @@ public class ForwardedHeadersFilter implements HttpHeadersFilter, Ordered {
 			return this;
 		}
 
-
 		private String quoteIfNeeded(String s) {
-			if (s.contains(":")) { //TODO: broaded quote
-				return "\""+s+"\"";
+			if (s != null && s.contains(":")) { // TODO: broaded quote
+				return "\"" + s + "\"";
 			}
 			return s;
 		}
@@ -163,9 +171,7 @@ public class ForwardedHeadersFilter implements HttpHeadersFilter, Ordered {
 
 		@Override
 		public String toString() {
-			return "Forwarded{" +
-					"values=" + this.values +
-					'}';
+			return "Forwarded{" + "values=" + this.values + '}';
 		}
 
 		public String toHeaderValue() {
@@ -174,12 +180,11 @@ public class ForwardedHeadersFilter implements HttpHeadersFilter, Ordered {
 				if (builder.length() > 0) {
 					builder.append(SEMICOLON);
 				}
-				builder.append(entry.getKey())
-						.append(EQUALS)
-						.append(entry.getValue());
+				builder.append(entry.getKey()).append(EQUALS).append(entry.getValue());
 			}
 			return builder.toString();
 		}
+
 	}
 
 }
